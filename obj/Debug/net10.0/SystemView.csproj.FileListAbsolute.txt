@@ -1,0 +1,15 @@
+S:\_dev\7LSM\bin\Debug\net10.0\SystemView.exe
+S:\_dev\7LSM\bin\Debug\net10.0\SystemView.deps.json
+S:\_dev\7LSM\bin\Debug\net10.0\SystemView.runtimeconfig.json
+S:\_dev\7LSM\bin\Debug\net10.0\SystemView.dll
+S:\_dev\7LSM\bin\Debug\net10.0\SystemView.pdb
+S:\_dev\7LSM\obj\Debug\net10.0\SystemView.GeneratedMSBuildEditorConfig.editorconfig
+S:\_dev\7LSM\obj\Debug\net10.0\SystemView.AssemblyInfoInputs.cache
+S:\_dev\7LSM\obj\Debug\net10.0\SystemView.AssemblyInfo.cs
+S:\_dev\7LSM\obj\Debug\net10.0\SystemView.csproj.CoreCompileInputs.cache
+S:\_dev\7LSM\obj\Debug\net10.0\SystemView.sourcelink.json
+S:\_dev\7LSM\obj\Debug\net10.0\SystemView.dll
+S:\_dev\7LSM\obj\Debug\net10.0\refint\SystemView.dll
+S:\_dev\7LSM\obj\Debug\net10.0\SystemView.pdb
+S:\_dev\7LSM\obj\Debug\net10.0\SystemView.genruntimeconfig.cache
+S:\_dev\7LSM\obj\Debug\net10.0\ref\SystemView.dll

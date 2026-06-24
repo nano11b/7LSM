@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 
 namespace SevenLabsSshMenu;
@@ -14,6 +15,20 @@ public class SshHost
     public string DisplayName => $"{Name} - {User}@{Address}";
 }
 
+public sealed class LxcContainer
+{
+    public int Vmid { get; }
+    public string Status { get; }
+    public string Name { get; }
+
+    public LxcContainer(int vmid, string status, string name)
+    {
+        Vmid = vmid;
+        Status = status;
+        Name = name;
+    }
+}
+
 public static class Program
 {
     private static readonly string AppTitle = "7LSM";
@@ -24,6 +39,7 @@ public static class Program
     );
 
     private static List<SshHost> Hosts = [];
+    private static readonly Dictionary<string, string?> HostPasswordCache = [];
 
     public static void Main()
     {
@@ -91,25 +107,9 @@ public static class Program
                 [
                     new SshHost
                     {
-                        Name = "AWS EAST | OHIO",
-                        Address = "3.129.217.82",
-                        User = "nano",
-                        Port = 22,
-                        IdentityFile = null
-                    },
-                    new SshHost
-                    {
-                        Name = "PROXMOX",
-                        Address = "10.0.10.4",
-                        User = "nano",
-                        Port = 22,
-                        IdentityFile = null
-                    },
-                    new SshHost
-                    {
-                        Name = "NANO-DEV",
-                        Address = "10.0.10.55",
-                        User = "nano",
+                        Name = "My Cool Server",
+                        Address = "1.3.3.7",
+                        User = "meowington",
                         Port = 22,
                         IdentityFile = null
                     }
@@ -283,9 +283,10 @@ public static class Program
                 "CONNECT",
                 "PING",
                 "CHECK",
-                "PROBE",
+                "TEST CONNECTION",
                 "PACKAGES",
-                "Back"
+                "PROXMOX » UPDATE LXC CONTAINERS",
+                "← BACK"
             };
 
             int choice = ShowMenu(host.Name, $"Choose an action for {host.Name}:", options);
@@ -313,6 +314,10 @@ public static class Program
                     break;
 
                 case 5:
+                    ManageLxcContainers(host);
+                    break;
+
+                case 6:
                 case -1:
                     return;
             }
@@ -328,7 +333,7 @@ public static class Program
                 "Update Packages",
                 "Install Package",
                 "Remove Package",
-                "Back"
+                "← BACK"
             };
 
             int choice = ShowMenu($"{host.Name} - Packages", "Choose a package action:", options);
@@ -362,16 +367,22 @@ public static class Program
         Console.WriteLine($"Updating packages on {host.Name}...");
         Console.WriteLine();
 
-        // Build SSH command to update packages
-        string updateCommand = "sudo apt update && sudo apt upgrade -y";
-        string sshArgs = BuildRemoteCommandArgs(host, updateCommand);
+        GetOrCacheHostPassword(host);
 
-        RunProcess("ssh", sshArgs);
+        if (!TryExecuteRemoteSudoCommand(host, "apt-get update && apt-get upgrade -y", allocateTty: true, out var result))
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine("Package update failed.");
+            Console.WriteLine(result.Error);
+            Console.ResetColor();
+        }
+        else
+        {
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine("Package update completed.");
+            Console.ResetColor();
+        }
 
-        Console.WriteLine();
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine("Package update completed.");
-        Console.ResetColor();
         Pause();
     }
 
@@ -396,15 +407,22 @@ public static class Program
         Console.WriteLine($"Installing '{packageName}' on {host.Name}...");
         Console.WriteLine();
 
-        string installCommand = $"sudo apt install -y {packageName.Trim()}";
-        string sshArgs = BuildRemoteCommandArgs(host, installCommand);
+        GetOrCacheHostPassword(host);
 
-        RunProcess("ssh", sshArgs);
+        if (!TryExecuteRemoteSudoCommand(host, $"apt-get install -y {packageName.Trim()}", allocateTty: true, out var result))
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"Package '{packageName}' installation failed.");
+            Console.WriteLine(result.Error);
+            Console.ResetColor();
+        }
+        else
+        {
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine($"Package '{packageName}' installation completed.");
+            Console.ResetColor();
+        }
 
-        Console.WriteLine();
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"Package '{packageName}' installation completed.");
-        Console.ResetColor();
         Pause();
     }
 
@@ -441,25 +459,269 @@ public static class Program
         Console.WriteLine($"Removing '{packageName}' from {host.Name}...");
         Console.WriteLine();
 
-        string removeCommand = $"sudo apt remove -y {packageName.Trim()}";
-        string sshArgs = BuildRemoteCommandArgs(host, removeCommand);
+        GetOrCacheHostPassword(host);
 
-        RunProcess("ssh", sshArgs);
+        if (!TryExecuteRemoteSudoCommand(host, $"apt-get remove -y {packageName.Trim()}", allocateTty: true, out var result))
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"Package '{packageName}' removal failed.");
+            Console.WriteLine(result.Error);
+            Console.ResetColor();
+        }
+        else
+        {
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine($"Package '{packageName}' removal completed.");
+            Console.ResetColor();
+        }
 
-        Console.WriteLine();
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"Package '{packageName}' removal completed.");
-        Console.ResetColor();
         Pause();
     }
 
-    private static string BuildRemoteCommandArgs(SshHost host, string command)
+    private static void ManageLxcContainers(SshHost host)
     {
-        var args = new List<string>
+        Console.Clear();
+        WriteHeader($"Manage LXC Containers - {host.Name}");
+
+        Console.WriteLine("Retrieving LXC container list from Proxmox...");
+        Console.WriteLine();
+
+        GetOrCacheHostPassword(host);
+
+        if (!TryExecuteRemoteSudoCommand(host, "pct list", allocateTty: false, out var listResult))
         {
-            "-p",
-            host.Port.ToString()
-        };
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine("Failed to retrieve LXC containers.");
+            Console.WriteLine(listResult.Error);
+            Console.WriteLine();
+            Console.WriteLine("Hint: Proxmox commands like pct usually require sudo without an interactive password prompt.");
+            Console.WriteLine("  - Configure passwordless sudo for the SSH user, or");
+            Console.WriteLine("  - Add the pct commands to /etc/sudoers with NOPASSWD for this user.");
+            Console.WriteLine("Example sudoers line:");
+            Console.WriteLine($"  {host.User} ALL=(ALL) NOPASSWD: /usr/sbin/pct list, /usr/sbin/pct start, /usr/sbin/pct exec");
+            Console.ResetColor();
+            Pause();
+            return;
+        }
+
+        var containers = ParsePctListOutput(listResult.Output).ToList();
+
+        if (containers.Count == 0)
+        {
+            Console.WriteLine("No LXC containers were found on this host.");
+            Pause();
+            return;
+        }
+
+        Console.WriteLine("       Containers    │");
+        Console.WriteLine(" ┌─────┬─────────┬───┘");
+        foreach (var container in containers)
+        {
+            Console.WriteLine($" ├ {container.Vmid} │ {container.Status} │ {container.Name}");
+        }
+        Console.WriteLine(" └─────┴─────────┴────");
+
+        var stoppedContainers = containers
+            .Where(c => !string.Equals(c.Status, "running", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (stoppedContainers.Count > 0)
+        {
+            Console.WriteLine();
+            Console.WriteLine("Starting stopped containers...");
+
+            foreach (var container in stoppedContainers)
+            {
+                Console.WriteLine($"Starting {container.Vmid} ({container.Name})...");
+                var startResult = ExecuteRemoteSudoCommand(host, $"pct start {container.Vmid}", allocateTty: false);
+                if (startResult.ExitCode != 0)
+                {
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine($"Failed to start {container.Vmid}: {startResult.Error}");
+                    Console.ResetColor();
+                }
+            }
+        }
+        else
+        {
+            Console.WriteLine();
+            Console.WriteLine("All containers are already running.");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Updating containers in place...");
+
+        foreach (var container in containers)
+        {
+            // Update the container, removing old packages and upgrading the rest.
+            Console.WriteLine($"Updating {container.Vmid} ({container.Name})...");
+            var updateResult = ExecuteRemoteSudoCommand(host, $"pct exec {container.Vmid} -- bash -c \"apt-get update 2>/dev/null | grep 'packages.*upgraded'; apt list --upgradable 2>/dev/null | cat && apt-get autoremove -y;", allocateTty: false);
+            Console.WriteLine(updateResult.ToString());
+            if (updateResult.ExitCode != 0)
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine($"Update failed for {container.Vmid}. See output below:");
+                Console.ResetColor();
+                Console.WriteLine(updateResult.Output);
+                Console.WriteLine(updateResult.Error);
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"Update completed for {container.Vmid}.");
+                Console.ResetColor();
+            }
+        }
+
+        Pause();
+    }
+
+    private static bool TryExecuteRemoteSudoCommand(SshHost host, string command, bool allocateTty, out (int ExitCode, string Output, string Error) result)
+    {
+        result = ExecuteRemoteSudoCommand(host, command, allocateTty);
+
+        if (result.ExitCode == 0)
+            return true;
+
+        // Prompt for password if not cached and the error indicates a password is required
+        bool hasCachedPassword = HostPasswordCache.TryGetValue(host.Address, out var cachedPwd) && !string.IsNullOrEmpty(cachedPwd);
+        if (!hasCachedPassword && ContainsPasswordRequired(result))
+        {
+            Console.Write("Enter sudo password: ");
+            string password = ReadPassword();
+            HostPasswordCache[host.Address] = password;
+            result = ExecuteRemoteSudoCommand(host, command, allocateTty);
+            return result.ExitCode == 0;
+        }
+
+        return false;
+    }
+
+    private static (int ExitCode, string Output, string Error) ExecuteRemoteSudoCommand(SshHost host, string command, bool allocateTty)
+    {
+        string? sudoPassword = null;
+        if (HostPasswordCache.TryGetValue(host.Address, out var pwd) && !string.IsNullOrEmpty(pwd))
+        {
+            sudoPassword = pwd;
+        }
+
+        string sudoCommand = sudoPassword is null ? $"sudo -n {command}" : $"sudo -S -p '' {command}";
+        string args = BuildRemoteCommandArgs(host, sudoCommand, allocateTty);
+        return RunProcessCaptureOutput("ssh", args, sudoPassword);
+    }
+
+    private static void GetOrCacheHostPassword(SshHost host)
+    {
+        if (!HostPasswordCache.ContainsKey(host.Address))
+        {
+            HostPasswordCache[host.Address] = null;
+        }
+    }
+
+    private static bool ContainsPasswordRequired((int ExitCode, string Output, string Error) result)
+    {
+        return result.Error.Contains("sudo: a password is required", StringComparison.OrdinalIgnoreCase)
+            || result.Output.Contains("sudo: a password is required", StringComparison.OrdinalIgnoreCase)
+            || result.Error.Contains("sudo: a password is required", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ReadPassword()
+    {
+        var builder = new StringBuilder();
+        while (true)
+        {
+            var key = Console.ReadKey(true);
+            if (key.Key == ConsoleKey.Enter)
+                break;
+
+            if (key.Key == ConsoleKey.Backspace && builder.Length > 0)
+            {
+                builder.Length--;
+                continue;
+            }
+
+            if (!char.IsControl(key.KeyChar))
+                builder.Append(key.KeyChar);
+        }
+
+        Console.WriteLine();
+        return builder.ToString();
+    }
+
+    private static IReadOnlyList<LxcContainer> ParsePctListOutput(string output)
+    {
+        var containers = new List<LxcContainer>();
+        var lines = output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+
+        foreach (var line in lines)
+        {
+            if (line.Trim().StartsWith("VMID", StringComparison.OrdinalIgnoreCase) || line.Trim().Length == 0)
+                continue;
+
+            var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 3)
+                continue;
+
+            if (!int.TryParse(parts[0], out int vmid))
+                continue;
+
+            string status = parts[1];
+            string name = parts.Length > 3 ? string.Join(' ', parts.Skip(3)) : string.Empty;
+
+            containers.Add(new LxcContainer(vmid, status, name));
+        }
+
+        return containers;
+    }
+
+    private static (int ExitCode, string Output, string Error) RunProcessCaptureOutput(string fileName, string arguments, string? stdin = null)
+    {
+        try
+        {
+            var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = fileName,
+                    Arguments = arguments,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    RedirectStandardInput = stdin != null
+                }
+            };
+
+            process.Start();
+
+            if (stdin != null)
+            {
+                process.StandardInput.WriteLine(stdin);
+                process.StandardInput.Close();
+            }
+
+            string output = process.StandardOutput.ReadToEnd();
+            string error = process.StandardError.ReadToEnd();
+            process.WaitForExit();
+
+            return (process.ExitCode, output.TrimEnd(), error.TrimEnd());
+        }
+        catch (Exception ex)
+        {
+            return (1, string.Empty, ex.Message);
+        }
+    }
+
+    private static string BuildRemoteCommandArgs(SshHost host, string command, bool allocateTty = true)
+    {
+        var args = new List<string>();
+
+        if (allocateTty)
+        {
+            args.Add("-t");
+        }
+
+        args.Add("-p");
+        args.Add(host.Port.ToString());
 
         if (!string.IsNullOrWhiteSpace(host.IdentityFile))
         {
@@ -656,14 +918,15 @@ public static class Program
         Console.WriteLine("                                                     ww");
 
         Console.ForegroundColor = ConsoleColor.Magenta;
-        Console.WriteLine("");
+        Console.WriteLine("This is a simple SSH client for connecting to remote servers.");
         Console.ResetColor();
-        Console.WriteLine("Good future actions to add:");
-        Console.WriteLine(" - Open SFTP");
-        Console.WriteLine(" - Run uptime");
-        Console.WriteLine(" - Tail logs");
-        Console.WriteLine(" - Reboot server");
-        Console.WriteLine(" - Open Proxmox web UI");
+        Console.WriteLine("You can use this tool to connect to your SSH servers.");
+        Console.WriteLine("It allows you to test SSH connections and view server information.");
+        Console.WriteLine("Just select a server and hit Enter to connect.");
+        Console.WriteLine("");
+        Console.WriteLine("ProxMox integration coming soon!");
+        Console.WriteLine("");
+        Console.WriteLine("~ nano11b");
 
         Pause();
     }

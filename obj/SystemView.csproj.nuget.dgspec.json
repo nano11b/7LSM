@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "S:\\source\\7LSM\\SystemView.csproj": {}
+    "S:\\_dev\\7LSM\\SystemView.csproj": {}
   },
   "projects": {
-    "S:\\source\\7LSM\\SystemView.csproj": {
+    "S:\\_dev\\7LSM\\SystemView.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "S:\\source\\7LSM\\SystemView.csproj",
+        "projectUniqueName": "S:\\_dev\\7LSM\\SystemView.csproj",
         "projectName": "SystemView",
-        "projectPath": "S:\\source\\7LSM\\SystemView.csproj",
+        "projectPath": "S:\\_dev\\7LSM\\SystemView.csproj",
         "packagesPath": "C:\\Users\\nano\\.nuget\\packages\\",
-        "outputPath": "S:\\source\\7LSM\\obj\\",
+        "outputPath": "S:\\_dev\\7LSM\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "S:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -68,7 +68,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.300/PortableRuntimeIdentifierGraph.json",
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.301/PortableRuntimeIdentifierGraph.json",
           "packagesToPrune": {
             "Microsoft.CSharp": "(,4.7.32767]",
             "Microsoft.VisualBasic": "(,10.4.32767]",
